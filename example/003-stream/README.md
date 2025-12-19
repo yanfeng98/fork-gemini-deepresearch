@@ -87,7 +87,7 @@ uvicorn main:app --reload --port 3001
 ## 4️⃣ 测试后端
 
 ```bash
-curl -X POST http://localhost:3001/api/chat \
+curl -X POST http://localhost:3001/api/chat-stream \
   -H "Content-Type: application/json" \
   -d '{"message": "你好，LangGraph"}'
 ```
