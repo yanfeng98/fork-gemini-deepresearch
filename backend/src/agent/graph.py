@@ -256,3 +256,7 @@ builder.add_conditional_edges(
 builder.add_edge("finalize_answer", END)
 
 graph = builder.compile(name="pro-search-agent")
+
+if __name__ == "__main__":
+    state = graph.invoke({"messages": [{"role": "user", "content": "Who won the euro 2024"}], "max_research_loops": 3, "initial_search_query_count": 3})
+    print(state)
