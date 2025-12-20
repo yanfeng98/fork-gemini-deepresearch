@@ -16,7 +16,6 @@ from agent.state import (
 )
 from agent.configuration import Configuration
 from agent.prompts import (
-    get_current_date,
     query_writer_instructions,
     web_searcher_instructions,
     reflection_instructions,
@@ -24,6 +23,8 @@ from agent.prompts import (
 )
 from langchain.chat_models import init_chat_model
 from agent.utils import (
+    get_current_date,
+    tavily_search,
     get_citations,
     get_research_topic,
     insert_citation_markers,
@@ -94,25 +95,14 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """
 
     configurable: Configuration = Configuration.from_runnable_config(config)
-    formatted_prompt: str = web_searcher_instructions.format(
-        current_date=get_current_date(),
-        research_topic=state["search_query"],
-    )
+    # model=configurable.query_generator_model,
+    modified_text: str = tavily_search(state["search_query"])
 
-    response = genai_client.models.generate_content(
-        model=configurable.query_generator_model,
-        contents=formatted_prompt,
-        config={
-            "tools": [{"google_search": {}}],
-            "temperature": 0,
-        },
-    )
-    resolved_urls: dict[str, str] = resolve_urls(
-        response.candidates[0].grounding_metadata.grounding_chunks, state["id"]
-    )
-    citations = get_citations(response, resolved_urls)
-    modified_text = insert_citation_markers(response.text, citations)
-    sources_gathered = [item for citation in citations for item in citation["segments"]]
+    # citations = get_citations(response, resolved_urls)
+    # modified_text = insert_citation_markers(response.text, citations)
+    # sources_gathered = [item for citation in citations for item in citation["segments"]]
+
+    sources_gathered = ["https://www.baidu.com", "https://www.google.com", "https://www.bing.com"]
 
     return {
         "sources_gathered": sources_gathered,
@@ -233,20 +223,22 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     )
     result = llm.invoke(formatted_prompt)
 
-    unique_sources: list[dict] = []
-    for source in state["sources_gathered"]:
-        if source["short_url"] in result.content:
-            result.content = result.content.replace(
-                source["short_url"], source["value"]
-            )
-            unique_sources.append(source)
+    # unique_sources: list[dict] = []
+    # for source in state["sources_gathered"]:
+    #     if source["short_url"] in result.content:
+    #         result.content = result.content.replace(
+    #             source["short_url"], source["value"]
+    #         )
+    #         unique_sources.append(source)
+
+    unique_sources = state["sources_gathered"]
 
     return {
         "messages": [AIMessage(content=result.content)],
         "sources_gathered": unique_sources,
     }
 
-builder: StateGraph[OverallState, Configuration] = StateGraph(OverallState, config_schema=Configuration)
+builder: StateGraph[OverallState, Configuration] = StateGraph(OverallState, context_schema=Configuration)
 
 builder.add_node("generate_query", generate_query)
 builder.add_node("web_research", web_research)
