@@ -40,7 +40,11 @@ Follow these steps to get the application running locally for development and te
 
 ```bash
 cd backend
-pip install .
+uv sync
+source .venv/bin/activate
+uv pip install -e .[dev]
+mypy .
+black .
 ```
 
 **Frontend:**

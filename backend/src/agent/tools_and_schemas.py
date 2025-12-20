@@ -1,9 +1,8 @@
-from typing import List
 from pydantic import BaseModel, Field
 
 
 class SearchQueryList(BaseModel):
-    query: List[str] = Field(
+    query: list[str] = Field(
         description="A list of search queries to be used for web research."
     )
     rationale: str = Field(
@@ -18,6 +17,6 @@ class Reflection(BaseModel):
     knowledge_gap: str = Field(
         description="A description of what information is missing or needs clarification."
     )
-    follow_up_queries: List[str] = Field(
+    follow_up_queries: list[str] = Field(
         description="A list of follow-up queries to address the knowledge gap."
     )
