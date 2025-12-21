@@ -10,7 +10,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// Updated InputFormProps
 interface InputFormProps {
   onSubmit: (inputValue: string, effort: string, model: string) => void;
   onCancel: () => void;
