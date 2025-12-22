@@ -12,7 +12,6 @@ class OverallState(TypedDict):
     messages: Annotated[list, add_messages]
     search_query: Annotated[list, operator.add]
     web_research_result: Annotated[list, operator.add]
-    sources_gathered: Annotated[list, operator.add]
     initial_search_query_count: int
     max_research_loops: int
     research_loop_count: int
@@ -43,4 +42,4 @@ class WebSearchState(TypedDict):
 
 @dataclass(kw_only=True)
 class SearchStateOutput:
-    running_summary: str = field(default=None)  # Final report
+    running_summary: str = field(default=None)

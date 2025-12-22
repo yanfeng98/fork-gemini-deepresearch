@@ -17,7 +17,6 @@ from agent.state import (
 from agent.configuration import Configuration
 from agent.prompts import (
     query_writer_instructions,
-    web_searcher_instructions,
     reflection_instructions,
     answer_instructions,
 )
@@ -25,10 +24,7 @@ from langchain.chat_models import init_chat_model
 from agent.utils import (
     get_current_date,
     tavily_search,
-    get_citations,
     get_research_topic,
-    insert_citation_markers,
-    resolve_urls,
 )
 
 load_dotenv()
@@ -91,21 +87,14 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         config: Configuration for the runnable, including search API settings
 
     Returns:
-        Dictionary with state update, including sources_gathered, research_loop_count, and web_research_results
+        Dictionary with state update, including web_research_results
     """
 
     configurable: Configuration = Configuration.from_runnable_config(config)
     # model=configurable.query_generator_model,
     modified_text: str = tavily_search(state["search_query"])
 
-    # citations = get_citations(response, resolved_urls)
-    # modified_text = insert_citation_markers(response.text, citations)
-    # sources_gathered = [item for citation in citations for item in citation["segments"]]
-
-    sources_gathered = ["https://www.baidu.com", "https://www.google.com", "https://www.bing.com"]
-
     return {
-        "sources_gathered": sources_gathered,
         "search_query": [state["search_query"]],
         "web_research_result": [modified_text],
     }
@@ -223,19 +212,8 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     )
     result = llm.invoke(formatted_prompt)
 
-    # unique_sources: list[dict] = []
-    # for source in state["sources_gathered"]:
-    #     if source["short_url"] in result.content:
-    #         result.content = result.content.replace(
-    #             source["short_url"], source["value"]
-    #         )
-    #         unique_sources.append(source)
-
-    unique_sources = state["sources_gathered"]
-
     return {
-        "messages": [AIMessage(content=result.content)],
-        "sources_gathered": unique_sources,
+        "messages": [AIMessage(content=result.content)]
     }
 
 builder: StateGraph[OverallState, Configuration] = StateGraph(OverallState, context_schema=Configuration)

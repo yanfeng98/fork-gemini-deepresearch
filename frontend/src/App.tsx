@@ -35,16 +35,13 @@ export default function App() {
           data: event.generate_query?.search_query?.join(", ") || "",
         };
       } else if (event.web_research) {
-        const sources = event.web_research.sources_gathered || [];
-        const numSources = sources.length;
-        const uniqueLabels = [
-          ...new Set(sources.map((s: any) => s.label).filter(Boolean)),
-        ];
-        const exampleLabels = uniqueLabels.slice(0, 3).join(", ");
+        const queries = event.web_research.search_query || [];
+        const numQueries = queries.length;
+        const web_research_results = event.web_research.web_research_result || [];
         processedEvent = {
           title: "Web Research",
-          data: `Gathered ${numSources} sources. Related to: ${
-            exampleLabels || "N/A"
+          data: `Gathered ${numQueries} queries. ${web_research_results.length} results found: ${
+            web_research_results || "N/A"
           }.`,
         };
       } else if (event.reflection) {
