@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "agent": "./src/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph",
+    "research_agent_full": "./deep_research/research_agent_full.py:agent"
   },
   "http": {
     "app": "./src/agent/app.py:app"
