@@ -55,7 +55,26 @@ export default function App() {
           data: "Composing and presenting the final answer.",
         };
         hasFinalizeEventOccurredRef.current = true;
+      } else if (event.write_research_brief) {
+        const research_brief = event.write_research_brief.research_brief || "";
+        processedEvent = {
+          title: "Writing Research Brief",
+          data: research_brief,
+        };
+      } else if (event.supervisor_subgraph) {
+        const raw_notes = event.supervisor_subgraph.supervisor_tools.raw_notes || [];
+        processedEvent = {
+          title: "Supervisor Subgraph",
+          data: raw_notes.join("\n\n"),
+        };
+      } else if (event.final_report_generation) {
+        processedEvent = {
+          title: "Finalizing Answer",
+          data: event.final_report_generation.final_report,
+        };
+        hasFinalizeEventOccurredRef.current = true;
       }
+
       if (processedEvent) {
         setProcessedEventsTimeline((prevEvents) => [
           ...prevEvents,

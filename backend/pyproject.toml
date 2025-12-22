@@ -1,5 +1,5 @@
 [project]
-name = "agent"
+name = "deep_research"
 version = "0.0.1"
 description = "Backend for the LangGraph agent"
 authors = [
