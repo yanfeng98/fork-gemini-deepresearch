@@ -61,19 +61,35 @@ export default function App() {
           title: "Writing Research Brief",
           data: research_brief,
         };
-      } else if (event.supervisor_subgraph) {
-        const raw_notes = event.supervisor_subgraph.supervisor_tools.raw_notes || [];
-        processedEvent = {
-          title: "Supervisor Subgraph",
-          data: raw_notes.join("\n\n"),
-        };
+      } else if (event.supervisor_tools) {
+        const researchs = event.supervisor_tools.researchs || [];
+        const notes = event.supervisor_tools.notes || [];
+        if (notes.length > 0) {
+          processedEvent = {
+            title: "Supervisor Notes",
+            data: notes.join("\n\n"),
+          };
+        } else {
+          processedEvent = {
+            title: "Supervisor Subgraph",
+            data: researchs[researchs.length - 1],
+          };
+        }
       } else if (event.final_report_generation) {
         processedEvent = {
           title: "Finalizing Answer",
           data: event.final_report_generation.final_report,
         };
         hasFinalizeEventOccurredRef.current = true;
+      } else if (event.compress_research) {
+        processedEvent = {
+          title: "Compressing Research",
+          data: event.compress_research.compressed_research,
+        };
       }
+
+      console.log(`processedEvent: ${JSON.stringify(processedEvent, null, 2)}`)
+      console.log(`event: ${JSON.stringify(event, null, 2)}`)
 
       if (processedEvent) {
         setProcessedEventsTimeline((prevEvents) => [

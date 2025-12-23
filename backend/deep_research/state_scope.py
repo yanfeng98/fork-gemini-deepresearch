@@ -30,6 +30,8 @@ class AgentState(MessagesState):
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
     raw_notes: Annotated[list[str], operator.add] = []
     notes: Annotated[list[str], operator.add] = []
+    research_iterations: int = 0
+    researchs: Annotated[list[str], operator.add] = []
     final_report: str
 
 class ClarifyWithUser(BaseModel):

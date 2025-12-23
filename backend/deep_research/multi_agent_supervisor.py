@@ -17,34 +17,26 @@ from typing_extensions import Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
-    HumanMessage, 
+    HumanMessage,
+    AIMessage,
     BaseMessage, 
     SystemMessage, 
     ToolMessage,
     filter_messages
 )
-from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 
-from deep_research.prompts import lead_researcher_prompt
+from deep_research.prompts import (
+    lead_researcher_prompt,
+    final_report_generation_prompt
+)
 from deep_research.research_agent import researcher_agent
-from deep_research.state_multi_agent_supervisor import (
-    SupervisorState, 
+from deep_research.state_multi_agent_supervisor import ( 
     ConductResearch, 
     ResearchComplete
 )
+from deep_research.state_scope import AgentState
 from deep_research.utils import get_today_str, think_tool
-
-try:
-    import nest_asyncio
-    try:
-        from IPython import get_ipython
-        if get_ipython() is not None:
-            nest_asyncio.apply()
-    except ImportError:
-        pass
-except ImportError:
-    pass
 
 supervisor_tools = [ConductResearch, ResearchComplete, think_tool]
 supervisor_model = init_chat_model(
@@ -57,7 +49,14 @@ supervisor_model_with_tools = supervisor_model.bind_tools(supervisor_tools)
 max_researcher_iterations = 6
 max_concurrent_researchers = 3
 
-async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tools"]]:
+writer_model = init_chat_model(
+    model="openai:deepseek-v3-1-terminus",
+    max_tokens=32000,
+    base_url=os.environ.get("OPENAI_BASE_URL"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
+
+async def supervisor(state: AgentState) -> Command[Literal["supervisor_tools"]]:
     """Coordinate research activities.
 
     Analyzes the research brief and current progress to decide:
@@ -89,7 +88,7 @@ async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tool
         }
     )
 
-async def supervisor_tools(state: SupervisorState) -> Command[Literal["supervisor", "__end__"]]:
+async def supervisor_tools(state: AgentState) -> Command[Literal["supervisor", "__end__"]]:
     """Execute supervisor decisions - either conduct research or end the process.
 
     Handles:
@@ -109,6 +108,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
     most_recent_message = supervisor_messages[-1]
 
     tool_messages = []
+    research = ""
     all_raw_notes = []
     next_step = "supervisor"
     should_end = False
@@ -122,7 +122,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
 
     if exceeded_iterations or no_tool_calls or research_complete:
         should_end = True
-        next_step = END
+        next_step = "final_report_generation"
 
     else:
         try:
@@ -145,6 +145,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
                         tool_call_id=tool_call["id"]
                     )
                 )
+                research += observation + "\n\n"
 
             if conduct_research_calls:
                 coros = [
@@ -169,6 +170,10 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
 
                 tool_messages.extend(research_tool_messages)
 
+                for result, tool_call in zip(tool_results, conduct_research_calls):
+                    research += "## research topic: " + tool_call["args"]["research_topic"] + "\n"
+                    research += "## compressed research" + result.get("compressed_research", "Error synthesizing research report") + "\n\n"
+
                 all_raw_notes = [
                     "\n".join(result.get("raw_notes", [])) 
                     for result in tool_results
@@ -177,7 +182,7 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
         except Exception as e:
             print(f"Error in supervisor tools: {e}")
             should_end = True
-            next_step = END
+            next_step = "final_report_generation"
 
     if should_end:
         return Command(
@@ -191,8 +196,10 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
         return Command(
             goto=next_step,
             update={
+                "messages": tool_messages,
                 "supervisor_messages": tool_messages,
-                "raw_notes": all_raw_notes
+                "raw_notes": all_raw_notes,
+                "researchs": [research]
             }
         )
 
@@ -213,8 +220,25 @@ def get_notes_from_tool_calls(messages: list[BaseMessage]) -> list[str]:
     """
     return [tool_msg.content for tool_msg in filter_messages(messages, include_types="tool")]
 
-supervisor_builder = StateGraph(SupervisorState)
-supervisor_builder.add_node("supervisor", supervisor)
-supervisor_builder.add_node("supervisor_tools", supervisor_tools)
-supervisor_builder.add_edge(START, "supervisor")
-supervisor_agent = supervisor_builder.compile()
+async def final_report_generation(state: AgentState):
+    """
+    Final report generation node.
+
+    Synthesizes all research findings into a comprehensive final report
+    """
+
+    notes: list[str] = state.get("notes", [])
+    findings: str = "\n".join(notes)
+
+    final_report_prompt: str = final_report_generation_prompt.format(
+        research_brief=state.get("research_brief", ""),
+        findings=findings,
+        date=get_today_str()
+    )
+
+    final_report: AIMessage = await writer_model.ainvoke([HumanMessage(content=final_report_prompt)])
+
+    return {
+        "final_report": final_report.content, 
+        "messages": ["Here is the final report: " + final_report.content],
+    }
