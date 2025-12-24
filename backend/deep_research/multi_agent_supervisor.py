@@ -56,7 +56,7 @@ writer_model = init_chat_model(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
-async def supervisor(state: AgentState) -> Command[Literal["supervisor_tools"]]:
+async def supervisor(state: AgentState) -> Command[Literal["conduct_parallel_think", "conduct_parallel_research", "final_report_generation"]]:
     """Coordinate research activities.
 
     Analyzes the research brief and current progress to decide:
@@ -78,128 +78,177 @@ async def supervisor(state: AgentState) -> Command[Literal["supervisor_tools"]]:
         max_researcher_iterations=max_researcher_iterations
     )
     messages = [SystemMessage(content=system_message)] + supervisor_messages
-    response = await supervisor_model_with_tools.ainvoke(messages)
+    most_recent_message = await supervisor_model_with_tools.ainvoke(messages)
 
-    return Command(
-        goto="supervisor_tools",
-        update={
-            "supervisor_messages": [response],
-            "research_iterations": state.get("research_iterations", 0) + 1
-        }
-    )
-
-async def supervisor_tools(state: AgentState) -> Command[Literal["supervisor", "__end__"]]:
-    """Execute supervisor decisions - either conduct research or end the process.
-
-    Handles:
-    - Executing think_tool calls for strategic reflection
-    - Launching parallel research agents for different topics
-    - Aggregating research results
-    - Determining when research is complete
-
-    Args:
-        state: Current supervisor state with messages and iteration count
-
-    Returns:
-        Command to continue supervision, end process, or handle errors
-    """
-    supervisor_messages = state.get("supervisor_messages", [])
     research_iterations = state.get("research_iterations", 0)
-    most_recent_message = supervisor_messages[-1]
-
-    tool_messages = []
-    research = ""
-    all_raw_notes = []
-    next_step = "supervisor"
-    should_end = False
-
-    exceeded_iterations = research_iterations >= max_researcher_iterations
-    no_tool_calls = not most_recent_message.tool_calls
-    research_complete = any(
+    exceeded_iterations: bool = (research_iterations + 1) >= max_researcher_iterations
+    no_tool_calls: bool = not most_recent_message.tool_calls
+    research_complete: bool = any(
         tool_call["name"] == "ResearchComplete" 
+        for tool_call in most_recent_message.tool_calls
+    )
+    is_conduct_think: bool = any(
+        tool_call["name"] == "think_tool" 
+        for tool_call in most_recent_message.tool_calls
+    )
+    is_conduct_research: bool = any(
+        tool_call["name"] == "ConductResearch" 
         for tool_call in most_recent_message.tool_calls
     )
 
     if exceeded_iterations or no_tool_calls or research_complete:
+        return Command(
+            goto="final_report_generation",
+            update={
+                "current_tool": "final_report_generation",
+                "supervisor_messages": [most_recent_message],
+                "research_iterations": state.get("research_iterations", 0) + 1,
+                "notes": get_notes_from_tool_calls(supervisor_messages)
+            }
+        )
+    elif is_conduct_think:
+        thinks: list[str] = [
+            tool_call["args"]["reflection"] for tool_call in most_recent_message.tool_calls 
+            if tool_call["name"] == "think_tool"
+        ]
+        return Command(
+            goto="conduct_parallel_think",
+            update={
+                "think_contents": "\n\n".join(thinks),
+                "current_tool": "conduct_think",
+                "supervisor_messages": [most_recent_message],
+                "research_iterations": state.get("research_iterations", 0) + 1
+            }
+        )
+    elif is_conduct_research:
+        research_topics: list[str] = [
+            tool_call["args"]["research_topic"] for tool_call in most_recent_message.tool_calls 
+            if tool_call["name"] == "ConductResearch"
+        ]
+        return Command(
+            goto="conduct_parallel_research",
+            update={
+                "research_topics": "\n\n".join(research_topics),
+                "current_tool": "conduct_research",
+                "supervisor_messages": [most_recent_message],
+                "research_iterations": state.get("research_iterations", 0) + 1
+            }
+        )
+    else:
+        return Command(
+            goto="final_report_generation",
+            update={
+                "current_tool": "final_report_generation",
+                "supervisor_messages": [most_recent_message],
+                "research_iterations": state.get("research_iterations", 0) + 1,
+                "notes": get_notes_from_tool_calls(supervisor_messages)
+            }
+        )
+
+def conduct_parallel_think(state: AgentState) -> Command[Literal["supervisor"]]:
+    """Conduct parallel think research.
+    
+    Args:
+        state: Current supervisor state with messages and research progress
+        
+    Returns:
+        Command to proceed to tool_node with updated state
+    """
+    most_recent_message = state.get("supervisor_messages", [])[-1]
+    
+    think_tool_calls = [
+        tool_call for tool_call in most_recent_message.tool_calls 
+        if tool_call["name"] == "think_tool"
+    ]
+
+    tool_messages: list[ToolMessage] = []
+    for tool_call in think_tool_calls:
+        observation = think_tool.invoke(tool_call["args"])
+        tool_messages.append(
+            ToolMessage(
+                content=observation,
+                name=tool_call["name"],
+                tool_call_id=tool_call["id"]
+            )
+        )
+
+    return Command(
+        goto="supervisor",
+        update={
+            "supervisor_messages": tool_messages,
+        }
+    )
+
+
+async def conduct_parallel_research(state: AgentState) -> Command[Literal["supervisor", "final_report_generation"]]:
+    """Conduct parallel research.
+    
+    Args:
+        state: Current supervisor state with messages and research progress
+        
+    Returns:
+        Command to proceed to tool_node with updated state
+    """
+    
+    next_step = "supervisor"
+    should_end = False
+    most_recent_message = state.get("supervisor_messages", [])[-1]
+    tool_messages: list[ToolMessage] = []
+    all_raw_notes = []
+
+    try:
+
+        conduct_research_calls = [
+            tool_call for tool_call in most_recent_message.tool_calls 
+            if tool_call["name"] == "ConductResearch"
+        ]
+
+        if conduct_research_calls:
+            coros = [
+                researcher_agent.ainvoke({
+                    "researcher_messages": [
+                        HumanMessage(content=tool_call["args"]["research_topic"])
+                    ],
+                    "research_topic": tool_call["args"]["research_topic"]
+                }) 
+                for tool_call in conduct_research_calls
+            ]
+
+            tool_results = await asyncio.gather(*coros)
+
+            research_tool_messages = [
+                ToolMessage(
+                    content=result.get("compressed_research", "Error synthesizing research report"),
+                    name=tool_call["name"],
+                    tool_call_id=tool_call["id"]
+                ) for result, tool_call in zip(tool_results, conduct_research_calls)
+            ]
+
+            tool_messages.extend(research_tool_messages)
+
+            all_raw_notes = [
+                "\n".join(result.get("raw_notes", [])) 
+                for result in tool_results
+            ]
+
+    except Exception as e:
+        print(f"Error in supervisor tools: {e}")
         should_end = True
         next_step = "final_report_generation"
-
-    else:
-        try:
-            think_tool_calls = [
-                tool_call for tool_call in most_recent_message.tool_calls 
-                if tool_call["name"] == "think_tool"
-            ]
-
-            conduct_research_calls = [
-                tool_call for tool_call in most_recent_message.tool_calls 
-                if tool_call["name"] == "ConductResearch"
-            ]
-
-            for tool_call in think_tool_calls:
-                observation = think_tool.invoke(tool_call["args"])
-                tool_messages.append(
-                    ToolMessage(
-                        content=observation,
-                        name=tool_call["name"],
-                        tool_call_id=tool_call["id"]
-                    )
-                )
-                research += observation + "\n\n"
-
-            if conduct_research_calls:
-                coros = [
-                    researcher_agent.ainvoke({
-                        "researcher_messages": [
-                            HumanMessage(content=tool_call["args"]["research_topic"])
-                        ],
-                        "research_topic": tool_call["args"]["research_topic"]
-                    }) 
-                    for tool_call in conduct_research_calls
-                ]
-
-                tool_results = await asyncio.gather(*coros)
-
-                research_tool_messages = [
-                    ToolMessage(
-                        content=result.get("compressed_research", "Error synthesizing research report"),
-                        name=tool_call["name"],
-                        tool_call_id=tool_call["id"]
-                    ) for result, tool_call in zip(tool_results, conduct_research_calls)
-                ]
-
-                tool_messages.extend(research_tool_messages)
-
-                for result, tool_call in zip(tool_results, conduct_research_calls):
-                    research += "## research topic: " + tool_call["args"]["research_topic"] + "\n"
-                    research += "## compressed research" + result.get("compressed_research", "Error synthesizing research report") + "\n\n"
-
-                all_raw_notes = [
-                    "\n".join(result.get("raw_notes", [])) 
-                    for result in tool_results
-                ]
-
-        except Exception as e:
-            print(f"Error in supervisor tools: {e}")
-            should_end = True
-            next_step = "final_report_generation"
 
     if should_end:
         return Command(
             goto=next_step,
             update={
-                "notes": get_notes_from_tool_calls(supervisor_messages),
-                "research_brief": state.get("research_brief", "")
+                "notes": get_notes_from_tool_calls(state.get("supervisor_messages", []))
             }
         )
     else:
         return Command(
             goto=next_step,
             update={
-                "messages": tool_messages,
                 "supervisor_messages": tool_messages,
                 "raw_notes": all_raw_notes,
-                "researchs": [research]
             }
         )
 

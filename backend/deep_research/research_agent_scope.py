@@ -15,7 +15,7 @@ from typing_extensions import Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, get_buffer_string
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END
 from langgraph.types import Command
 
 from deep_research.prompts import clarify_with_user_instructions, transform_messages_into_research_topic_prompt
@@ -78,13 +78,3 @@ def write_research_brief(state: AgentState):
         "research_brief": response.research_brief,
         "supervisor_messages": [HumanMessage(content=f"{response.research_brief}.")]
     }
-
-deep_researcher_builder = StateGraph(AgentState, input_schema=AgentInputState)
-
-deep_researcher_builder.add_node("clarify_with_user", clarify_with_user)
-deep_researcher_builder.add_node("write_research_brief", write_research_brief)
-
-deep_researcher_builder.add_edge(START, "clarify_with_user")
-deep_researcher_builder.add_edge("write_research_brief", END)
-
-scope_research = deep_researcher_builder.compile()

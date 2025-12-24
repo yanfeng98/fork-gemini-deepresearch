@@ -19,7 +19,8 @@ from deep_research.state_scope import AgentState, AgentInputState
 from deep_research.research_agent_scope import clarify_with_user, write_research_brief
 from deep_research.multi_agent_supervisor import (
     supervisor, 
-    supervisor_tools, 
+    conduct_parallel_think,
+    conduct_parallel_research,
     final_report_generation
 )
 
@@ -31,7 +32,8 @@ deep_researcher_builder.add_node("clarify_with_user", clarify_with_user)
 deep_researcher_builder.add_node("write_research_brief", write_research_brief)
 
 deep_researcher_builder.add_node("supervisor", supervisor)
-deep_researcher_builder.add_node("supervisor_tools", supervisor_tools)
+deep_researcher_builder.add_node("conduct_parallel_think", conduct_parallel_think)
+deep_researcher_builder.add_node("conduct_parallel_research", conduct_parallel_research)
 
 deep_researcher_builder.add_node("final_report_generation", final_report_generation)
 

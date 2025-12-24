@@ -61,18 +61,23 @@ export default function App() {
           title: "Writing Research Brief",
           data: research_brief,
         };
-      } else if (event.supervisor_tools) {
-        const researchs = event.supervisor_tools.researchs || [];
-        const notes = event.supervisor_tools.notes || [];
-        if (notes.length > 0) {
+      } else if (event.supervisor) {
+        const current_tool = event.supervisor.current_tool || "";
+        if (current_tool === "conduct_think") {
           processedEvent = {
-            title: "Supervisor Notes",
-            data: notes.join("\n\n"),
+            title: "Conducting Think",
+            data: event.supervisor.think_contents || "",
           };
-        } else {
+        } else if (current_tool === "conduct_research") {
           processedEvent = {
-            title: "Supervisor Subgraph",
-            data: researchs[researchs.length - 1],
+            title: "Conducting Research",
+            data: event.supervisor.research_topics || "",
+          };
+        } else if (current_tool === "final_report_generation") {
+          const notes = event.supervisor.notes || [];
+          processedEvent = {
+            title: "Structured Notes for Final Report Generation",
+            data: notes.join("\n").slice(0, 100),
           };
         }
       } else if (event.final_report_generation) {
